@@ -168,6 +168,17 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
 
                 /*
+                 * FRAME OPTIONS — DISABLED (for H2 Console)
+                 *
+                 * The H2 Console uses iframes internally. By default,
+                 * Spring Security blocks iframes (clickjacking protection).
+                 * We disable this so the H2 Console works during development.
+                 *
+                 * In PRODUCTION with PostgreSQL, remove this line.
+                 */
+                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+
+                /*
                  * URL-BASED AUTHORIZATION RULES
                  *
                  * This section defines which URLs are public and which
@@ -210,7 +221,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/swagger-ui.html")
+                                "/swagger-ui.html",
+                                "/h2-console/**")
                         .permitAll()
 
                         /*

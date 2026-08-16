@@ -1,10 +1,13 @@
 package com.urlshortener.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +45,7 @@ import java.util.List;
 @Builder
 @Entity
 @Table(name = "urls")
-public class Url {
+public class Url implements Serializable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -111,8 +114,22 @@ public class Url {
      * DATABASE PERSPECTIVE:
      *   urls table has a column: user_id BIGINT NOT NULL REFERENCES users(id)
      */
+    /*
+     * RELATIONSHIP: Many URLs → One User (LAZY loaded)
+     *
+     * @JsonIgnoreProperties → Breaks the infinite serialization loop.
+     *
+     * When Redis serializes a Url object, Jackson would normally follow
+     * the User reference, then follow User.urls, then follow each Url's
+     * User reference, and so on infinitely.
+     *
+     * By ignoring the "urls" and "password" fields on the User side
+     * during serialization, we break the cycle:
+     *   Url → User (only id, username, email, role) ← STOPS HERE ✅
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnoreProperties({"urls", "password", "hibernateLazyInitializer", "handler"})
     private User user;
 
     /*
@@ -195,6 +212,7 @@ public class Url {
      * orphanRemoval = true → Removing a click from the list deletes it from DB.
      * fetch = FetchType.LAZY → Click events are only loaded when requested.
      */
+    @JsonIgnore  // Prevents LazyInitializationException when serializing to Redis cache
     @OneToMany(mappedBy = "url", cascade = CascadeType.ALL,
                orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default

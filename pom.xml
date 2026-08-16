@@ -45,10 +45,10 @@
 		<!-- Starters = pre-packaged dependency groups  -->
 		<!-- ========================================= -->
 
-		<!-- Spring Web: REST controllers, embedded Tomcat server -->
+		<!-- Spring Web: REST controllers, embedded Tomcat server, servlet auto-config -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc</artifactId>
+			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
 		<!-- Spring Data JPA: ORM layer (Hibernate) for database access -->
@@ -168,43 +168,20 @@
 		<!-- TEST DEPENDENCIES                         -->
 		<!-- ========================================= -->
 
-		<!-- Spring Boot Test: JUnit 5, Mockito, MockMvc, etc. -->
+		<!-- Spring Boot Test: JUnit 5, Mockito, MockMvc, Spring Security Test, etc. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-cache-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-redis-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-security-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-validation-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 
-		<!-- H2: in-memory database for tests (so tests don't need PostgreSQL) -->
+
+		<!-- H2: in-memory database for development and tests -->
+		<!-- In production, switch to PostgreSQL by activating the 'prod' profile -->
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
-			<scope>test</scope>
+			<scope>runtime</scope>
 		</dependency>
 
 	</dependencies>
