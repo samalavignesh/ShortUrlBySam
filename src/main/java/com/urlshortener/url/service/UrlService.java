@@ -14,8 +14,11 @@ import com.urlshortener.exception.UrlExpiredException;
 import com.urlshortener.repository.ClickEventRepository;
 import com.urlshortener.repository.UrlRepository;
 import com.urlshortener.repository.UserRepository;
+import org.springframework.cache.annotation.Cacheable;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,44 +36,44 @@ import java.util.List;
  *
  * WHAT THIS SERVICE DOES:
  * ───────────────────────
- * 1. SHORTEN  → Takes a long URL, generates a short code, saves it
+ * 1. SHORTEN → Takes a long URL, generates a short code, saves it
  * 2. REDIRECT → Looks up a short code, returns the original URL
  * 3. ANALYTICS → Returns click statistics for a URL
- * 4. LIST     → Returns all URLs for a user
+ * 4. LIST → Returns all URLs for a user
  * 5. DEACTIVATE → Soft-deletes a URL (sets isActive = false)
  *
  * WHERE DOES THIS FIT?
  * ────────────────────
  *
- * ┌─────────┐     ┌────────────────┐     ┌─────────────┐     ┌──────────────┐
- * │ Client  │ ──→ │ UrlController  │ ──→ │ UrlService   │ ──→ │ UrlRepository│
- * │         │     │                │     │ (this class) │     │ ClickEventRep│
- * └─────────┘     └────────────────┘     └──────┬───────┘     └──────────────┘
- *                                               │
- *                                        ┌──────┴──────┐
- *                                        │             │
- *                                   Short Code    Click Event
- *                                   Generation    Recording
+ * ┌─────────┐ ┌────────────────┐ ┌─────────────┐ ┌──────────────┐
+ * │ Client │ ──→ │ UrlController │ ──→ │ UrlService │ ──→ │ UrlRepository│
+ * │ │ │ │ │ (this class) │ │ ClickEventRep│
+ * └─────────┘ └────────────────┘ └──────┬───────┘ └──────────────┘
+ * │
+ * ┌──────┴──────┐
+ * │ │
+ * Short Code Click Event
+ * Generation Recording
  *
  * DESIGN DECISIONS:
  * ─────────────────
  *
  * 1. SHORT CODE GENERATION
- *    We use SecureRandom (cryptographically strong) to generate
- *    random alphanumeric codes. We check for collisions before saving.
+ * We use SecureRandom (cryptographically strong) to generate
+ * random alphanumeric codes. We check for collisions before saving.
  *
  * 2. ATOMIC CLICK COUNTING
- *    We use UrlRepository.incrementClickCount() which runs:
- *    UPDATE urls SET click_count = click_count + 1 WHERE id = ?
- *    This prevents race conditions when multiple clicks happen simultaneously.
+ * We use UrlRepository.incrementClickCount() which runs:
+ * UPDATE urls SET click_count = click_count + 1 WHERE id = ?
+ * This prevents race conditions when multiple clicks happen simultaneously.
  *
  * 3. OWNERSHIP CHECKS
- *    Users can only view/delete their OWN URLs. We verify ownership
- *    before performing any operation. Admins bypass this check.
+ * Users can only view/delete their OWN URLs. We verify ownership
+ * before performing any operation. Admins bypass this check.
  *
  * 4. SOFT DELETE
- *    URLs are never physically deleted — we set isActive = false.
- *    This preserves analytics data and prevents short code reuse.
+ * URLs are never physically deleted — we set isActive = false.
+ * This preserves analytics data and prevents short code reuse.
  *
  * @Service → Marks this as a Spring service bean with business logic.
  * @RequiredArgsConstructor → Lombok generates constructor for final fields.
@@ -93,16 +96,25 @@ public class UrlService {
     private final UserRepository userRepository;
 
     /*
+     * Dedicated cache service — handles all Redis lookups and evictions
+     * for URL entities. Lives in a SEPARATE Spring bean so that
+     * 
+     * @Cacheable / @CacheEvict AOP proxies are properly intercepted.
+     * (Calling these from within this same class would bypass the proxy.)
+     */
+    private final UrlCacheService urlCacheService;
+
+    /*
      * BASE URL — The domain/host used to construct full short URLs.
      *
      * @Value injects from application.properties:
-     *   app.base-url=http://localhost:8080
+     * app.base-url=http://localhost:8080
      *
      * In production, this would be your actual domain:
-     *   app.base-url=https://short.example.com
+     * app.base-url=https://short.example.com
      *
      * We use this to build the full short URL:
-     *   base URL + "/" + short code = "http://localhost:8080/abc123"
+     * base URL + "/" + short code = "http://localhost:8080/abc123"
      */
     @Value("${app.base-url:http://localhost:8080}")
     private String baseUrl;
@@ -111,7 +123,7 @@ public class UrlService {
      * SHORT CODE LENGTH — How many characters in the generated short code.
      *
      * 6 characters from a 62-char alphabet (a-z, A-Z, 0-9) gives us:
-     *   62^6 = 56,800,235,584 possible combinations (~56 billion)
+     * 62^6 = 56,800,235,584 possible combinations (~56 billion)
      *
      * That's more than enough for most URL shorteners.
      * For context, bit.ly has shortened about 50 billion links total.
@@ -123,20 +135,19 @@ public class UrlService {
      * Using alphanumeric characters (a-z, A-Z, 0-9) = 62 characters.
      *
      * We deliberately EXCLUDE:
-     *   - Special characters (!@#$%^&*) → URL encoding issues
-     *   - Confusing characters (0/O, l/1/I) → Optional, kept for simplicity
+     * - Special characters (!@#$%^&*) → URL encoding issues
+     * - Confusing characters (0/O, l/1/I) → Optional, kept for simplicity
      */
-    private static final String CHARACTERS =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     /*
      * SecureRandom — Cryptographically strong random number generator.
      *
      * WHY SecureRandom INSTEAD OF Random?
-     *   Random uses a predictable algorithm (LCG). If an attacker knows
-     *   the seed, they can predict ALL future short codes.
-     *   SecureRandom uses the OS's entropy source (/dev/urandom on Linux,
-     *   CryptGenRandom on Windows) — truly unpredictable.
+     * Random uses a predictable algorithm (LCG). If an attacker knows
+     * the seed, they can predict ALL future short codes.
+     * SecureRandom uses the OS's entropy source (/dev/urandom on Linux,
+     * CryptGenRandom on Windows) — truly unpredictable.
      *
      * This prevents attackers from guessing short codes of other users.
      */
@@ -153,24 +164,36 @@ public class UrlService {
      *
      * FLOW:
      * ┌──────────────────────────────────────────────────────────────────┐
-     * │  1. LOOK UP the authenticated user from the database            │
-     * │  2. If custom code provided → CHECK if it's available           │
-     * │  3. If no custom code → GENERATE a random unique code           │
-     * │  4. PARSE optional expiration date                              │
-     * │  5. BUILD the Url entity                                        │
-     * │  6. SAVE to database                                            │
-     * │  7. CONVERT to UrlResponse and return                           │
+     * │ 1. LOOK UP the authenticated user from the database │
+     * │ 2. If custom code provided → CHECK if it's available │
+     * │ 3. If no custom code → GENERATE a random unique code │
+     * │ 4. PARSE optional expiration date │
+     * │ 5. BUILD the Url entity │
+     * │ 6. SAVE to database │
+     * │ 7. CONVERT to UrlResponse and return │
      * └──────────────────────────────────────────────────────────────────┘
      *
-     * @param request  The ShortenUrlRequest with originalUrl, optional customCode, expiresAt
+     * @param request The ShortenUrlRequest with originalUrl, optional customCode,
+     * expiresAt
+     * 
      * @param username The authenticated user's username (from JWT token)
+     * 
      * @return UrlResponse with the shortened URL details
      *
      * @Transactional → Wraps the entire method in a database transaction.
-     *   If ANY step fails, ALL changes are rolled back.
-     *   This ensures we don't create a URL without a valid user,
-     *   or leave orphaned records if saving fails.
+     * If ANY step fails, ALL changes are rolled back.
+     * This ensures we don't create a URL without a valid user,
+     * or leave orphaned records if saving fails.
      */
+    /*
+     * @CacheEvict → When a user creates a new URL, their cached URL list
+     * is now stale (missing the new URL). We evict the user's cached list
+     * so the next getUserUrls() call fetches fresh data from the database.
+     *
+     * key = #username → Each user has their own cached list.
+     * Example: CacheEvict removes key "urlListCache::john_doe"
+     */
+    @CacheEvict(value = "urlListCache", key = "#username")
     @Transactional
     public UrlResponse shortenUrl(ShortenUrlRequest request, String username) {
 
@@ -218,9 +241,9 @@ public class UrlService {
              * If the code already exists, we generate a new one.
              *
              * Collision probability is extremely low:
-             *   With 62^6 = ~56 billion possibilities and even
-             *   1 million existing URLs, the chance of collision
-             *   is ~0.002%. But we still check, because Murphy's Law.
+             * With 62^6 = ~56 billion possibilities and even
+             * 1 million existing URLs, the chance of collision
+             * is ~0.002%. But we still check, because Murphy's Law.
              *
              * We use a do-while loop to guarantee at least one attempt.
              */
@@ -237,7 +260,7 @@ public class UrlService {
          * If provided → Parse and set the expiration.
          *
          * We use LocalDateTime.parse() which expects ISO 8601:
-         *   "2027-01-01T00:00:00" → LocalDateTime(2027, 1, 1, 0, 0)
+         * "2027-01-01T00:00:00" → LocalDateTime(2027, 1, 1, 0, 0)
          */
         LocalDateTime expiresAt = null;
         if (request.getExpiresAt() != null && !request.getExpiresAt().isBlank()) {
@@ -260,9 +283,9 @@ public class UrlService {
          * STEP 6: Save to database.
          *
          * JPA generates:
-         *   INSERT INTO urls (short_code, original_url, user_id, is_active,
-         *                     click_count, expires_at, created_at, updated_at)
-         *   VALUES ('abc123', 'https://...', 1, true, 0, null, NOW(), NOW())
+         * INSERT INTO urls (short_code, original_url, user_id, is_active,
+         * click_count, expires_at, created_at, updated_at)
+         * VALUES ('abc123', 'https://...', 1, true, 0, null, NOW(), NOW())
          */
         Url savedUrl = urlRepository.save(url);
 
@@ -280,12 +303,12 @@ public class UrlService {
      *
      * FLOW:
      * ┌──────────────────────────────────────────────────────────────────┐
-     * │  1. FIND the URL by short code                                  │
-     * │  2. CHECK if the URL is active (not soft-deleted)               │
-     * │  3. CHECK if the URL has expired                                │
-     * │  4. INCREMENT the click count (atomic)                          │
-     * │  5. RECORD the click event (IP, user-agent, referer)            │
-     * │  6. RETURN the original URL for redirect                        │
+     * │ 1. FIND the URL by short code │
+     * │ 2. CHECK if the URL is active (not soft-deleted) │
+     * │ 3. CHECK if the URL has expired │
+     * │ 4. INCREMENT the click count (atomic) │
+     * │ 5. RECORD the click event (IP, user-agent, referer) │
+     * │ 6. RETURN the original URL for redirect │
      * └──────────────────────────────────────────────────────────────────┘
      *
      * PERFORMANCE IS CRITICAL HERE:
@@ -294,35 +317,59 @@ public class UrlService {
      * A URL shortener's primary job is redirecting, so this must be FAST.
      *
      * Current performance characteristics:
-     *   Step 1: O(1) — short_code has a UNIQUE index
-     *   Step 4: O(1) — single UPDATE with WHERE clause on indexed PK
-     *   Step 5: O(1) — single INSERT
+     * Step 1: O(1) — short_code has a UNIQUE index
+     * Step 4: O(1) — single UPDATE with WHERE clause on indexed PK
+     * Step 5: O(1) — single INSERT
      *
      * Future optimization: Add Redis caching for popular URLs
      * to avoid hitting the database on every redirect.
      *
-     * @param shortCode  The short code from the URL path (e.g., "abc123")
-     * @param ipAddress  The visitor's IP address (from HttpServletRequest)
-     * @param userAgent  The browser's User-Agent header
-     * @param referer    The referring page URL (can be null)
+     * @param shortCode The short code from the URL path (e.g., "abc123")
+     * 
+     * @param ipAddress The visitor's IP address (from HttpServletRequest)
+     * 
+     * @param userAgent The browser's User-Agent header
+     * 
+     * @param referer The referring page URL (can be null)
+     * 
      * @return The original long URL to redirect to
      *
      * @Transactional → Ensures both the click count increment AND
-     *   the click event insert happen atomically. If either fails,
-     *   both are rolled back.
+     * the click event insert happen atomically. If either fails,
+     * both are rolled back.
+     */
+    /*
+     * NOTE: We intentionally do NOT cache the redirect method.
+     *
+     * WHY NOT?
+     * ────────
+     * The redirect method has SIDE EFFECTS:
+     * 1. It increments the click count
+     * 2. It records a click event for analytics
+     *
+     * If we cached this, repeated clicks would return the cached URL
+     * but SKIP the click tracking — making analytics inaccurate.
+     *
+     * Instead, we cache just the URL lookup in a separate method
+     * (findUrlByShortCode) and keep the side effects outside the cache.
      */
     @Transactional
     public String redirect(String shortCode, String ipAddress,
-                           String userAgent, String referer) {
+            String userAgent, String referer) {
 
         /*
-         * STEP 1: Find the URL by short code.
+         * STEP 1: Find the URL by short code — via Redis cache.
          *
-         * This is a lookup on a UNIQUE indexed column — instant.
-         * If not found → 404 Not Found
+         * We call urlCacheService (a SEPARATE Spring bean) instead of
+         * a private method on this class. This ensures the @Cacheable
+         * AOP proxy is properly intercepted:
+         *
+         * Cache HIT → returns from Redis instantly (~0.5ms)
+         * Cache MISS → queries PostgreSQL, stores in Redis, returns result
+         *
+         * If not found → ResourceNotFoundException → HTTP 404
          */
-        Url url = urlRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new ResourceNotFoundException("Url", "shortCode", shortCode));
+        Url url = urlCacheService.findByShortCode(shortCode);
 
         /*
          * STEP 2: Check if the URL is active.
@@ -349,7 +396,7 @@ public class UrlService {
          * STEP 4: Increment click count atomically.
          *
          * Uses the custom @Query in UrlRepository:
-         *   UPDATE urls SET click_count = click_count + 1 WHERE id = ?
+         * UPDATE urls SET click_count = click_count + 1 WHERE id = ?
          *
          * This is atomic — safe for concurrent clicks.
          * See UrlRepository.incrementClickCount() for detailed explanation.
@@ -360,10 +407,10 @@ public class UrlService {
          * STEP 5: Record the click event for analytics.
          *
          * We capture:
-         *   - WHEN: clickedAt (auto-set by @CreationTimestamp)
-         *   - WHERE FROM: ipAddress (for geographic analysis)
-         *   - WHAT: userAgent (for device/browser breakdown)
-         *   - WHO SENT: referer (for traffic source analysis)
+         * - WHEN: clickedAt (auto-set by @CreationTimestamp)
+         * - WHERE FROM: ipAddress (for geographic analysis)
+         * - WHAT: userAgent (for device/browser breakdown)
+         * - WHO SENT: referer (for traffic source analysis)
          */
         ClickEvent clickEvent = ClickEvent.builder()
                 .url(url)
@@ -391,15 +438,29 @@ public class UrlService {
      * Used for the user's dashboard — "Your Shortened URLs".
      *
      * @param username The authenticated user's username (from JWT)
+     * 
      * @return List of UrlResponse DTOs
      *
      * @Transactional(readOnly = true) → Optimization hint.
-     *   Tells Spring this method only reads data, never writes.
-     *   Benefits:
-     *     - JPA skips dirty checking (faster)
-     *     - DB can use read-only optimizations
-     *     - Prevents accidental modifications
+     * Tells Spring this method only reads data, never writes.
+     * Benefits:
+     * - JPA skips dirty checking (faster)
+     * - DB can use read-only optimizations
+     * - Prevents accidental modifications
      */
+    /*
+     * @Cacheable → Caches the user's URL list in Redis.
+     *
+     * key = #username → Each user's list is cached separately.
+     * Example key: "urlListCache::john_doe"
+     *
+     * First call: Hits DB, stores result in Redis, returns data
+     * Second call: Returns directly from Redis (~1ms), skips DB entirely
+     *
+     * Cache is invalidated when the user creates or deactivates a URL
+     * (via @CacheEvict on shortenUrl and deactivateUrl).
+     */
+    @Cacheable(value = "urlListCache", key = "#username")
     @Transactional(readOnly = true)
     public List<UrlResponse> getUserUrls(String username) {
 
@@ -418,15 +479,17 @@ public class UrlService {
      *
      * FLOW:
      * ┌──────────────────────────────────────────────────────────────────┐
-     * │  1. FIND the URL by short code                                  │
-     * │  2. VERIFY the requesting user owns this URL                    │
-     * │  3. LOAD all click events for this URL                          │
-     * │  4. MAP click events to ClickEventResponse DTOs                 │
-     * │  5. BUILD and return the UrlAnalyticsResponse                   │
+     * │ 1. FIND the URL by short code │
+     * │ 2. VERIFY the requesting user owns this URL │
+     * │ 3. LOAD all click events for this URL │
+     * │ 4. MAP click events to ClickEventResponse DTOs │
+     * │ 5. BUILD and return the UrlAnalyticsResponse │
      * └──────────────────────────────────────────────────────────────────┘
      *
      * @param shortCode The short code to get analytics for
-     * @param username  The authenticated user's username
+     * 
+     * @param username The authenticated user's username
+     * 
      * @return UrlAnalyticsResponse with click details
      */
     @Transactional(readOnly = true)
@@ -489,11 +552,12 @@ public class UrlService {
      * 1. RECOVERY: Accidentally deactivated URLs can be restored
      * 2. ANALYTICS: Historical click data is preserved
      * 3. SHORT CODE REUSE: Prevents reusing codes that were
-     *    previously active (which would confuse cached links)
+     * previously active (which would confuse cached links)
      * 4. AUDIT TRAIL: We can see which URLs existed and when
      *
      * @param shortCode The short code of the URL to deactivate
-     * @param username  The authenticated user's username
+     * 
+     * @param username The authenticated user's username
      */
     @Transactional
     public void deactivateUrl(String shortCode, String username) {
@@ -509,15 +573,24 @@ public class UrlService {
         }
 
         /*
-         * Set isActive to false and save.
-         *
-         * After this, the URL will:
-         *   - Not redirect (redirect() checks isActive)
-         *   - Not appear in active URL lists
-         *   - Still exist in the database with all analytics data
+         * Set isActive to false and persist.
          */
         url.setActive(false);
         urlRepository.save(url);
+
+        /*
+         * Evict the URL from Redis cache via UrlCacheService.
+         *
+         * We call urlCacheService.evictUrl() (external bean) instead of
+         * using @CacheEvict on this method. This ensures the eviction
+         * goes through the AOP proxy — same reason we use UrlCacheService
+         * for lookups.
+         *
+         * After eviction:
+         * - Next redirect → cache MISS → DB query → isActive=false → 404
+         * - User's dashboard will also show the URL as deactivated
+         */
+        urlCacheService.evictUrl(shortCode);
     }
 
     // ================================================================
@@ -540,9 +613,9 @@ public class UrlService {
      * COLLISION ANALYSIS:
      * ───────────────────
      * With 62^6 = ~56 billion possibilities:
-     *   - At 1 million URLs: collision chance ≈ 0.002%
-     *   - At 10 million URLs: collision chance ≈ 0.02%
-     *   - At 100 million URLs: collision chance ≈ 0.2%
+     * - At 1 million URLs: collision chance ≈ 0.002%
+     * - At 10 million URLs: collision chance ≈ 0.02%
+     * - At 100 million URLs: collision chance ≈ 0.2%
      *
      * Even in the worst case, we just generate another code.
      * The do-while loop handles this automatically.
@@ -586,9 +659,9 @@ public class UrlService {
      * so we extract it to a private method to avoid duplication (DRY).
      *
      * KEY TRANSFORMATIONS:
-     *   - Constructs the full shortUrl by combining baseUrl + shortCode
-     *   - Extracts username from the User relationship (avoids exposing
-     *     the full User entity with password hash)
+     * - Constructs the full shortUrl by combining baseUrl + shortCode
+     * - Extracts username from the User relationship (avoids exposing
+     * the full User entity with password hash)
      */
     private UrlResponse mapToUrlResponse(Url url) {
         return UrlResponse.builder()

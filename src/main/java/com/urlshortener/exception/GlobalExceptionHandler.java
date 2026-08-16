@@ -243,7 +243,12 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)              // HTTP 400
-                .body(ApiResponse.success("Validation failed", errors));
+                .body(ApiResponse.<Map<String, String>>builder()
+                        .success(false)
+                        .message("Validation failed")
+                        .data(errors)
+                        .timestamp(java.time.LocalDateTime.now())
+                        .build());
     }
 
     /*
@@ -298,9 +303,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleGenericException(
             Exception ex) {
 
-        // In production, you'd log this: log.error("Unexpected error", ex);
+        // DEBUG: expose the actual exception for diagnosis (REMOVE in production!)
+        ex.printStackTrace();
+        String debugMsg = "[DEBUG] " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)    // HTTP 500
-                .body(ApiResponse.error("An unexpected error occurred. Please try again later."));
+                .body(ApiResponse.error(debugMsg));
     }
 }

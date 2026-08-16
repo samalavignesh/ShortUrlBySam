@@ -1,0 +1,166 @@
+# =====================================================
+# DOCKER COMPOSE — URL Shortener Local Development
+# =====================================================
+#
+# This file spins up the two infrastructure services the app needs:
+#   1. PostgreSQL  → Primary database (port 5432)
+#   2. Redis       → Caching layer (port 6379)
+#
+# HOW TO USE:
+# ───────────
+#   Start:   docker compose up -d
+#   Stop:    docker compose down
+#   Logs:    docker compose logs -f
+#   Destroy: docker compose down -v   ← also deletes data volumes
+#
+# AFTER STARTING:
+# ───────────────
+#   Run the app with the postgres profile:
+#     ./mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=postgres
+#
+# Or set in your IDE run configuration:
+#   Active Profiles: postgres
+#
+# WHY DOCKER INSTEAD OF INSTALLING LOCALLY?
+# ──────────────────────────────────────────
+# ✅ Zero installation — DB/Redis run in isolated containers
+# ✅ Reproducible — Every developer gets the same DB version
+# ✅ Easy cleanup — docker compose down -v wipes everything
+# ✅ No port conflicts — Uses standard ports, easy to change
+# ✅ Production parity — Same software stack as production
+
+
+
+services:
+
+  # ===========================================================
+  # POSTGRESQL — Primary Database
+  # ===========================================================
+  #
+  # Stores users, urls, and click_events tables.
+  # Spring Boot + Hibernate auto-creates the schema on startup
+  # (via spring.jpa.hibernate.ddl-auto=update in postgres profile).
+  #
+  # Connection details match application-postgres.properties:
+  #   URL:      jdbc:postgresql://localhost:5432/urlshortener
+  #   Username: urluser
+  #   Password: urlpass
+  #
+  # IMAGE: postgres:16-alpine
+  #   - Version 16: Latest stable, great performance
+  #   - alpine: Minimal base image (~85MB vs ~400MB for full)
+  #
+  postgres:
+    image: postgres:16-alpine
+    container_name: urlshortener-postgres
+    restart: unless-stopped
+
+    # Environment variables configure the PostgreSQL instance.
+    # These are read by the postgres Docker image on first startup.
+    environment:
+      POSTGRES_DB: urlshortener        # Database name to auto-create
+      POSTGRES_USER: urluser           # Application database user
+      POSTGRES_PASSWORD: urlpass       # Password (use secrets in production!)
+      PGDATA: /var/lib/postgresql/data/pgdata  # Data directory inside container
+
+    # Port mapping: HOST:CONTAINER
+    # Maps localhost:5432 → container:5432
+    # Your app connects to localhost:5432 as if Postgres were installed locally.
+    ports:
+      - "5432:5432"
+
+    # Named volume: persists data across docker compose down/up
+    # Without this, ALL DATA IS LOST when the container stops!
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # Health check: Docker waits until Postgres is ready to accept
+    # connections before marking the service as healthy.
+    # The app service (if added later) can depend on this being healthy.
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U urluser -d urlshortener" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    # Custom network so services can talk to each other by name
+    networks:
+      - urlshortener-network
+
+  # ===========================================================
+  # REDIS — Caching Layer
+  # ===========================================================
+  #
+  # Used for:
+  #   - URL redirect caching (urlCache, 10-min TTL)
+  #   - User URL list caching (urlListCache, 5-min TTL)
+  #   - Rate limiting counters (Step 11)
+  #
+  # Spring connects to this via:
+  #   spring.data.redis.host=localhost
+  #   spring.data.redis.port=6379
+  #
+  # IMAGE: redis:7-alpine
+  #   - Version 7: Includes Redis Functions, better ACL support
+  #   - alpine: Minimal footprint (~35MB)
+  #
+  # COMMAND: redis-server --save 60 1 --loglevel warning
+  #   --save 60 1     → Persist data to disk every 60 seconds
+  #                     if at least 1 key changed (RDB snapshot)
+  #   --loglevel warning → Only log warnings and errors (less noise)
+  #
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+
+    ports:
+      - "6379:6379"
+
+    # Named volume: persists Redis data (RDB snapshots) across restarts
+    volumes:
+      - redis_data:/data
+
+    # Health check: PING command returns PONG when Redis is ready
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    networks:
+      - urlshortener-network
+
+# ===========================================================
+# VOLUMES — Named Persistent Storage
+# ===========================================================
+#
+# Named volumes persist data across container restarts.
+# They are managed by Docker and stored in:
+#   Linux/Mac: /var/lib/docker/volumes/
+#   Windows:   \\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes\
+#
+# To completely reset the database:
+#   docker compose down -v    ← -v flag removes volumes too
+#
+volumes:
+  postgres_data:
+    name: urlshortener_postgres_data
+  redis_data:
+    name: urlshortener_redis_data
+
+# ===========================================================
+# NETWORKS
+# ===========================================================
+#
+# A dedicated bridge network isolates our services from other
+# Docker containers on the machine. Services on the same network
+# can reach each other by container name (e.g., "postgres", "redis").
+#
+networks:
+  urlshortener-network:
+    name: urlshortener-network
+    driver: bridge

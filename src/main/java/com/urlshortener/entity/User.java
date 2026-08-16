@@ -1,11 +1,13 @@
 package com.urlshortener.entity;
 
 import com.urlshortener.enums.Role;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,7 +84,7 @@ import java.util.List;
  */
 @Entity
 @Table(name = "users")
-public class User {
+public class User implements Serializable {
 
     /*
      * @Id → Marks this field as the PRIMARY KEY of the table.
@@ -222,6 +224,7 @@ public class User {
      *       → We initialize the list to avoid NullPointerException.
      *         Without this, urls would be null until Hibernate loads it.
      */
+    @JsonIgnore  // Breaks the Url → User → urls → Url infinite serialization loop
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL,
                orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
