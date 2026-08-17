@@ -1,5 +1,6 @@
 package com.urlshortener.url.service;
 
+import com.urlshortener.dto.response.CachedUrl;
 import com.urlshortener.entity.Url;
 import com.urlshortener.exception.ResourceNotFoundException;
 import com.urlshortener.repository.UrlRepository;
@@ -102,9 +103,16 @@ public class UrlCacheService {
      * @throws ResourceNotFoundException if no URL exists with this short code
      */
     @Cacheable(value = "urlCache", key = "#shortCode")
-    public Url findByShortCode(String shortCode) {
-        return urlRepository.findByShortCode(shortCode)
+    public CachedUrl findByShortCode(String shortCode) {
+        Url url = urlRepository.findByShortCode(shortCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Url", "shortCode", shortCode));
+                
+        return CachedUrl.builder()
+                .id(url.getId())
+                .originalUrl(url.getOriginalUrl())
+                .active(url.isActive())
+                .expiresAt(url.getExpiresAt())
+                .build();
     }
 
     /**
