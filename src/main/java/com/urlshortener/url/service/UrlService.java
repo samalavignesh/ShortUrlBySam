@@ -1,6 +1,7 @@
 package com.urlshortener.url.service;
 
 import com.urlshortener.dto.request.ShortenUrlRequest;
+import com.urlshortener.dto.response.CachedUrl;
 import com.urlshortener.dto.response.ClickEventResponse;
 import com.urlshortener.dto.response.UrlAnalyticsResponse;
 import com.urlshortener.dto.response.UrlResponse;
@@ -369,7 +370,7 @@ public class UrlService {
          *
          * If not found → ResourceNotFoundException → HTTP 404
          */
-        Url url = urlCacheService.findByShortCode(shortCode);
+        CachedUrl cachedUrl = urlCacheService.findByShortCode(shortCode);
 
         /*
          * STEP 2: Check if the URL is active.
@@ -377,7 +378,7 @@ public class UrlService {
          * Soft-deleted URLs should not redirect. The owner deactivated
          * this URL intentionally, so we treat it as "not found."
          */
-        if (!url.isActive()) {
+        if (!cachedUrl.isActive()) {
             throw new ResourceNotFoundException("Url", "shortCode", shortCode);
         }
 
@@ -388,7 +389,7 @@ public class UrlService {
          * the URL is no longer valid. We throw UrlExpiredException
          * which maps to HTTP 410 Gone.
          */
-        if (url.getExpiresAt() != null && LocalDateTime.now().isAfter(url.getExpiresAt())) {
+        if (cachedUrl.getExpiresAt() != null && LocalDateTime.now().isAfter(cachedUrl.getExpiresAt())) {
             throw new UrlExpiredException(shortCode);
         }
 
@@ -401,7 +402,13 @@ public class UrlService {
          * This is atomic — safe for concurrent clicks.
          * See UrlRepository.incrementClickCount() for detailed explanation.
          */
-        urlRepository.incrementClickCount(url.getId());
+        urlRepository.incrementClickCount(cachedUrl.getId());
+
+        /*
+         * Get a proxy reference to the Url entity for the ClickEvent relationship.
+         * This avoids an extra SELECT query just to set the foreign key.
+         */
+        Url urlRef = urlRepository.getReferenceById(cachedUrl.getId());
 
         /*
          * STEP 5: Record the click event for analytics.
@@ -413,7 +420,7 @@ public class UrlService {
          * - WHO SENT: referer (for traffic source analysis)
          */
         ClickEvent clickEvent = ClickEvent.builder()
-                .url(url)
+                .url(urlRef)
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
                 .referer(referer)
@@ -427,7 +434,7 @@ public class UrlService {
          * The controller will use this to send an HTTP 302 redirect
          * response, which tells the browser to navigate to this URL.
          */
-        return url.getOriginalUrl();
+        return cachedUrl.getOriginalUrl();
     }
 
     /*
