@@ -79,6 +79,7 @@ services:
       - urlshortener-network
 
   # 4. React Frontend + Nginx
+# 4. React Frontend + Nginx
   frontend:
     build:
       context: ./frontend
@@ -88,7 +89,10 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80" # Maps port 80 on your AWS EC2 instance to port 80 in Nginx
+      - "80:80"   # HTTP
+      - "443:443" # HTTPS
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - urlshortener-network
 

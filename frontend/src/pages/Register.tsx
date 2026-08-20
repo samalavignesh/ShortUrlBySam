@@ -10,10 +10,16 @@ const Register: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+	if (!passwordRegex.test(password)) {
+      setError(
+        'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+      );
+      return;
+    }
     setIsLoading(true);
 
     try {
