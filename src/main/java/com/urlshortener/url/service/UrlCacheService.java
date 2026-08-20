@@ -102,7 +102,7 @@ public class UrlCacheService {
      * @return The Url entity
      * @throws ResourceNotFoundException if no URL exists with this short code
      */
-    @Cacheable(value = "urlCache", key = "#shortCode")
+    @Cacheable(value = "urlCache", key = "#shortCode", unless = "#result == null")
     public CachedUrl findByShortCode(String shortCode) {
         Url url = urlRepository.findByShortCode(shortCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Url", "shortCode", shortCode));

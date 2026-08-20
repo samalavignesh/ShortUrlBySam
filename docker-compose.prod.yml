@@ -1,0 +1,104 @@
+# =====================================================
+# DOCKER COMPOSE — URL Shortener Production Deployment
+# =====================================================
+#
+# This file spins up the entire stack for AWS / Production:
+#   1. PostgreSQL
+#   2. Redis
+#   3. Backend (Spring Boot API)
+#   4. Frontend (React + Nginx)
+#
+# HOW TO DEPLOY TO AWS EC2:
+# ───────────
+# 1. Install Docker & Docker Compose on the EC2 instance.
+# 2. Copy this project folder to the EC2 instance.
+# 3. Run: docker compose -f docker-compose.prod.yml up -d --build
+# 4. Access the app via your EC2 Public IP or attached Domain Name!
+
+services:
+
+  # 1. PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: prod-urlshortener-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: urlshortener
+      POSTGRES_USER: urluser
+      POSTGRES_PASSWORD: urlpass # In a real production environment, use Docker Secrets!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U urluser -d urlshortener" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - urlshortener-network
+
+  # 2. Redis Cache & Stream
+  redis:
+    image: redis:7-alpine
+    container_name: prod-urlshortener-redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - urlshortener-network
+
+  # 3. Spring Boot Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prod-urlshortener-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - SPRING_PROFILES_ACTIVE=postgres
+      # Override the DB URL to point to the docker-compose service name 'postgres'
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/urlshortener
+      # Override Redis host to point to the docker-compose service name 'redis'
+      - SPRING_DATA_REDIS_HOST=redis
+      # Port is standard 6379 internally
+      - SPRING_DATA_REDIS_PORT=6379
+      # App Base URL (Change this to your actual AWS Domain Name later)
+      - APP_BASE_URL=http://localhost
+    networks:
+      - urlshortener-network
+
+  # 4. React Frontend + Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: prod-urlshortener-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80" # Maps port 80 on your AWS EC2 instance to port 80 in Nginx
+    networks:
+      - urlshortener-network
+
+volumes:
+  postgres_data:
+    name: prod_urlshortener_postgres_data
+  redis_data:
+    name: prod_urlshortener_redis_data
+
+networks:
+  urlshortener-network:
+    name: prod-urlshortener-network
+    driver: bridge

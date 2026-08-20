@@ -75,6 +75,12 @@
 			<artifactId>spring-boot-starter-data-redis</artifactId>
 		</dependency>
 
+		<!-- Needed for Lettuce connection pooling -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-pool2</artifactId>
+		</dependency>
+
 		<!-- Spring Cache: @Cacheable, @CacheEvict abstraction -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -167,6 +173,20 @@
 		<!-- ========================================= -->
 		<!-- TEST DEPENDENCIES                         -->
 		<!-- ========================================= -->
+
+		<!-- Advanced Analytics: User-Agent Parsing -->
+		<dependency>
+			<groupId>com.github.ua-parser</groupId>
+			<artifactId>uap-java</artifactId>
+			<version>1.5.4</version>
+		</dependency>
+
+		<!-- Advanced Analytics: Geo-IP Parsing -->
+		<dependency>
+			<groupId>com.maxmind.geoip2</groupId>
+			<artifactId>geoip2</artifactId>
+			<version>4.2.0</version>
+		</dependency>
 
 		<!-- Spring Boot Test: JUnit 5, Mockito, MockMvc, Spring Security Test, etc. -->
 		<dependency>

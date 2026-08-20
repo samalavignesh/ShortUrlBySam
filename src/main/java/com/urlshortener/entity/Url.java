@@ -67,7 +67,7 @@ public class Url implements Serializable {
      * because of unique = true. This makes lookups by short code very fast,
      * which is important because EVERY redirect queries this column.
      */
-    @Column(nullable = false, unique = true, length = 10)
+    @Column(nullable = false, unique = true, length = 20)
     private String shortCode;
 
     /*

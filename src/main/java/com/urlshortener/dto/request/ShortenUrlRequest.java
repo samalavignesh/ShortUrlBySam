@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.hibernate.validator.constraints.URL;
 
 /**
@@ -78,10 +80,12 @@ public class ShortenUrlRequest {
      * the service will generate a random short code.
      *
      * The service layer will validate:
-     * - Length (must be 3-10 characters)
+     * - Length (must be 3-20 characters)
      * - Format (alphanumeric and hyphens only)
      * - Availability (not already taken)
      */
+    @Size(min = 3, max = 20, message = "Custom code must be between 3 and 20 characters")
+    @Pattern(regexp = "^[a-zA-Z0-9-]+$", message = "Custom code can only contain letters, numbers, and hyphens")
     private String customCode;
 
     /*

@@ -5,6 +5,7 @@ import com.urlshortener.dto.response.CachedUrl;
 import com.urlshortener.dto.response.ClickEventResponse;
 import com.urlshortener.dto.response.UrlAnalyticsResponse;
 import com.urlshortener.dto.response.UrlResponse;
+import com.urlshortener.analytics.messaging.ClickEventProducer;
 import com.urlshortener.entity.ClickEvent;
 import com.urlshortener.entity.Url;
 import com.urlshortener.entity.User;
@@ -12,6 +13,8 @@ import com.urlshortener.exception.DuplicateResourceException;
 import com.urlshortener.exception.ResourceNotFoundException;
 import com.urlshortener.exception.UnauthorizedAccessException;
 import com.urlshortener.exception.UrlExpiredException;
+import com.urlshortener.analytics.messaging.ClickEventProducer;
+import com.urlshortener.dto.event.ClickEventPayload;
 import com.urlshortener.repository.ClickEventRepository;
 import com.urlshortener.repository.UrlRepository;
 import com.urlshortener.repository.UserRepository;
@@ -90,7 +93,10 @@ public class UrlService {
     /* Database access for URL entities */
     private final UrlRepository urlRepository;
 
-    /* Database access for click event entities */
+    /* Async producer for click events */
+    private final ClickEventProducer clickEventProducer;
+
+    /* Database access for click event entities (used for analytics) */
     private final ClickEventRepository clickEventRepository;
 
     /* Database access for user entities (to look up current user) */
@@ -123,13 +129,13 @@ public class UrlService {
     /*
      * SHORT CODE LENGTH — How many characters in the generated short code.
      *
-     * 6 characters from a 62-char alphabet (a-z, A-Z, 0-9) gives us:
-     * 62^6 = 56,800,235,584 possible combinations (~56 billion)
+     * 7 characters from a 62-char alphabet (a-z, A-Z, 0-9) gives us:
+     * 62^7 = 3.52 trillion possible combinations
      *
      * That's more than enough for most URL shorteners.
      * For context, bit.ly has shortened about 50 billion links total.
      */
-    private static final int SHORT_CODE_LENGTH = 6;
+    private static final int SHORT_CODE_LENGTH = 7;
 
     /*
      * CHARACTER SET for short code generation.
@@ -394,39 +400,20 @@ public class UrlService {
         }
 
         /*
-         * STEP 4: Increment click count atomically.
+         * STEP 4: Asynchronously record the click event for analytics.
          *
-         * Uses the custom @Query in UrlRepository:
-         * UPDATE urls SET click_count = click_count + 1 WHERE id = ?
-         *
-         * This is atomic — safe for concurrent clicks.
-         * See UrlRepository.incrementClickCount() for detailed explanation.
+         * Instead of synchronously blocking the redirect to write to PostgreSQL,
+         * we push a payload to a Redis Stream. A background consumer will process
+         * it to increment the click count and save the ClickEvent entity.
          */
-        urlRepository.incrementClickCount(cachedUrl.getId());
-
-        /*
-         * Get a proxy reference to the Url entity for the ClickEvent relationship.
-         * This avoids an extra SELECT query just to set the foreign key.
-         */
-        Url urlRef = urlRepository.getReferenceById(cachedUrl.getId());
-
-        /*
-         * STEP 5: Record the click event for analytics.
-         *
-         * We capture:
-         * - WHEN: clickedAt (auto-set by @CreationTimestamp)
-         * - WHERE FROM: ipAddress (for geographic analysis)
-         * - WHAT: userAgent (for device/browser breakdown)
-         * - WHO SENT: referer (for traffic source analysis)
-         */
-        ClickEvent clickEvent = ClickEvent.builder()
-                .url(urlRef)
+        ClickEventPayload payload = ClickEventPayload.builder()
+                .urlId(cachedUrl.getId())
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
                 .referer(referer)
                 .build();
 
-        clickEventRepository.save(clickEvent);
+        clickEventProducer.publishEvent(payload);
 
         /*
          * STEP 6: Return the original URL.
@@ -476,7 +463,7 @@ public class UrlService {
 
         return urlRepository.findByUser(user).stream()
                 .map(this::mapToUrlResponse)
-                .toList();
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /*
@@ -698,6 +685,11 @@ public class UrlService {
                 .ipAddress(clickEvent.getIpAddress())
                 .userAgent(clickEvent.getUserAgent())
                 .referer(clickEvent.getReferer())
+                .os(clickEvent.getOs())
+                .browser(clickEvent.getBrowser())
+                .deviceType(clickEvent.getDeviceType())
+                .country(clickEvent.getCountry())
+                .city(clickEvent.getCity())
                 .build();
     }
 }

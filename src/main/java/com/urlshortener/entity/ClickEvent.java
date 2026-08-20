@@ -159,4 +159,23 @@ public class ClickEvent {
      */
     @Column(length = 2048)
     private String referer;
+
+    /*
+     * PARSED ANALYTICS FIELDS
+     * These are populated asynchronously by parsing the IP address and User-Agent.
+     */
+    @Column(length = 50)
+    private String os;
+
+    @Column(length = 50)
+    private String browser;
+
+    @Column(length = 50)
+    private String deviceType;
+
+    @Column(length = 100)
+    private String country;
+
+    @Column(length = 100)
+    private String city;
 }

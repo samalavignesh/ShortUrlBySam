@@ -466,7 +466,7 @@ public class UrlController {
      *    the original HTTP specification (RFC 2616) that's now permanent.
      *    Can be null if the user typed the URL directly.
      */
-    @GetMapping("/{shortCode:[A-Za-z0-9]{3,10}}")
+    @GetMapping("/{shortCode:[A-Za-z0-9-]{3,20}}")
     public ResponseEntity<Void> redirect(
             @PathVariable String shortCode,
             HttpServletRequest request) {

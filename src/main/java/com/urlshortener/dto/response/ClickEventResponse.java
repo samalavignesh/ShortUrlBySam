@@ -48,4 +48,14 @@ public class ClickEventResponse {
 
     /* The website the visitor came from (can be null) */
     private String referer;
+
+    private String os;
+
+    private String browser;
+
+    private String deviceType;
+
+    private String country;
+
+    private String city;
 }
