@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import api from '../api/api';
 import { LogIn } from 'lucide-react';
@@ -11,6 +11,10 @@ const Login: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Retrieve any redirect success messages (e.g. after password reset)
+  const successMessage = location.state?.message;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +48,12 @@ const Login: React.FC = () => {
           <p className="text-muted">Sign in to manage your short links</p>
         </div>
 
+        {successMessage && (
+          <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid var(--success, #22c55e)', color: 'var(--success, #22c55e)', padding: '0.75rem', borderRadius: 'var(--border-radius-sm)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+            {successMessage}
+          </div>
+        )}
+
         {error && (
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', color: 'var(--danger)', padding: '0.75rem', borderRadius: 'var(--border-radius-sm)', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
             {error}
@@ -65,7 +75,15 @@ const Login: React.FC = () => {
           </div>
 
           <div className="input-group">
-            <label className="input-label" htmlFor="password">Password</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="input-label" htmlFor="password">Password</label>
+              <Link 
+                to="/forgot-password" 
+                style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', textDecoration: 'none', fontWeight: 500 }}
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               type="password"

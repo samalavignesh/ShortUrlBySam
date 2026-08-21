@@ -1,20 +1,19 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/api';
-import { UserPlus, Send, ArrowLeft } from 'lucide-react';
+import { Send, KeyRound, ArrowLeft } from 'lucide-react';
 
-const Register: React.FC = () => {
-  const [step, setStep] = useState<1 | 2>(1); // 1 = Enter Username & Email, 2 = Enter OTP & Password
-  const [username, setUsername] = useState('');
+const ForgotPassword: React.FC = () => {
+  const [step, setStep] = useState<1 | 2>(1); // 1 = Request Code, 2 = Verify Code & Reset
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Strict Password Regex: Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
 
   const handleSendOtp = async (e: React.FormEvent) => {
@@ -23,36 +22,39 @@ const Register: React.FC = () => {
     setIsLoading(true);
 
     try {
-      await api.post('/auth/send-registration-otp', { email });
-      setInfoMessage(`Verification code sent to ${email}`);
+      await api.post('/auth/forgot-password', { email });
+      setInfoMessage(`A 6-digit reset code has been sent to ${email}`);
       setStep(2);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.message || 'Failed to send verification code. Email might already exist.');
+      setError(err.response?.data?.message || 'No account found with this email address.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!passwordRegex.test(password)) {
-      setError(
-        'Password must be at least 8 characters long and contain uppercase, lowercase, a number, and a symbol.'
-      );
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    if (!passwordRegex.test(newPassword)) {
+      setError('Password must be at least 8 characters long and contain uppercase, lowercase, a number, and a symbol.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await api.post('/auth/register', { username, email, otp, password });
-      navigate('/login', { state: { message: 'Registration successful! Please login.' } });
+      await api.post('/auth/reset-password', { email, otp, newPassword });
+      navigate('/login', { state: { message: 'Password reset successful! Please log in with your new password.' } });
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.message || 'Registration failed. Check code and try again.');
+      setError(err.response?.data?.message || 'Failed to reset password. Please verify the code.');
     } finally {
       setIsLoading(false);
     }
@@ -62,9 +64,13 @@ const Register: React.FC = () => {
     <div className="flex-center" style={{ minHeight: '100vh', padding: '1rem' }}>
       <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 className="heading-md text-gradient">Create Account</h1>
+          <h1 className="heading-md text-gradient">
+            {step === 1 ? 'Forgot Password' : 'Reset Password'}
+          </h1>
           <p className="text-muted" style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-            {step === 1 ? 'Enter your details to verify email' : 'Enter the code sent to your inbox'}
+            {step === 1
+              ? 'Enter your registered email to receive a reset code'
+              : 'Enter the code sent to your email and set a new password'}
           </p>
         </div>
 
@@ -104,24 +110,9 @@ const Register: React.FC = () => {
 
         {step === 1 ? (
           <form onSubmit={handleSendOtp}>
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                Username
-              </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="johndoe"
-                className="input-field"
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '6px' }}
-              />
-            </div>
-
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                Email
+                Registered Email
               </label>
               <input
                 type="email"
@@ -148,14 +139,14 @@ const Register: React.FC = () => {
               }}
             >
               <Send size={16} />
-              {isLoading ? 'Sending Code...' : 'Send Verification Code'}
+              {isLoading ? 'Sending Code...' : 'Send Reset Code'}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleRegister}>
+          <form onSubmit={handleResetPassword}>
             <div style={{ marginBottom: '1.25rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                6-Digit Verification Code
+                6-Digit Reset Code
               </label>
               <input
                 type="text"
@@ -176,15 +167,15 @@ const Register: React.FC = () => {
               />
             </div>
 
-            <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                Password
+                New Password
               </label>
               <input
                 type="password"
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 className="input-field"
                 style={{ width: '100%', padding: '0.75rem', borderRadius: '6px' }}
@@ -192,6 +183,21 @@ const Register: React.FC = () => {
               <small className="text-muted" style={{ display: 'block', marginTop: '0.35rem', fontSize: '0.75rem' }}>
                 Min 8 chars, uppercase, lowercase, number & special char.
               </small>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="input-field"
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '6px' }}
+              />
             </div>
 
             <button
@@ -207,8 +213,8 @@ const Register: React.FC = () => {
                 gap: '0.5rem'
               }}
             >
-              <UserPlus size={18} />
-              {isLoading ? 'Verifying & Creating...' : 'Verify & Register'}
+              <KeyRound size={16} />
+              {isLoading ? 'Resetting Password...' : 'Reset Password & Proceed'}
             </button>
 
             <button
@@ -232,15 +238,14 @@ const Register: React.FC = () => {
                 gap: '0.35rem'
               }}
             >
-              <ArrowLeft size={14} /> Back / Change Email
+              <ArrowLeft size={14} /> Back / Resend Code
             </button>
           </form>
         )}
 
         <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.875rem' }}>
-          <span className="text-muted">Already have an account? </span>
           <Link to="/login" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 500 }}>
-            Sign In
+            Back to Sign In
           </Link>
         </div>
       </div>
@@ -248,4 +253,4 @@ const Register: React.FC = () => {
   );
 };
 
-export default Register;
+export default ForgotPassword;

@@ -1,5 +1,8 @@
-package com.urlshortener.auth.service;
 
+package com.urlshortener.auth.service;
+import com.urlshortener.dto.request.ForgotPasswordRequest;
+import com.urlshortener.dto.request.ResetPasswordRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.urlshortener.dto.request.LoginRequest;
 import com.urlshortener.dto.request.RegisterRequest;
 import com.urlshortener.dto.response.AuthResponse;
@@ -12,7 +15,11 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.time.Duration;
+import java.util.Random;
 /**
  * =====================================================
  * AUTH SERVICE
@@ -79,7 +86,11 @@ public class AuthService {
      *   - Find users by username (during login, via AuthManager → UserDetailsService)
      */
     private final UserRepository userRepository;
+    @Autowired
+    private JavaMailSender mailSender;
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
     /*
      * PasswordEncoder — hashes passwords using BCrypt.
      * We use it during REGISTRATION to hash the raw password before saving.
@@ -161,6 +172,35 @@ public class AuthService {
      * @return AuthResponse containing the JWT token, username, and role
      * @throws DuplicateResourceException if username or email already exists
      */
+	public void sendPasswordResetOtp(String email) {
+        if (!userRepository.existsByEmail(email)) {
+            throw new RuntimeException("No account found with this email address");
+        }
+
+        String otp = String.format("%06d", new Random().nextInt(1000000));
+        redisTemplate.opsForValue().set("RESET_OTP:" + email, otp, Duration.ofMinutes(5));
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Password Reset Code - URL Shortener");
+        message.setText("Hello,\n\nYour password reset code is: " + otp + "\n\nThis code will expire in 5 minutes.\nIf you did not request this, please ignore this email.");
+        mailSender.send(message);
+    }
+
+    public void resetPassword(ResetPasswordRequest request) {
+        String storedOtp = redisTemplate.opsForValue().get("RESET_OTP:" + request.getEmail());
+        if (storedOtp == null || !storedOtp.equals(request.getOtp())) {
+            throw new RuntimeException("Invalid or expired reset code");
+        }
+
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        redisTemplate.delete("RESET_OTP:" + request.getEmail());
+    }
     public AuthResponse register(RegisterRequest request) {
 
         /*
@@ -173,6 +213,10 @@ public class AuthService {
          * If true, we throw DuplicateResourceException which the
          * GlobalExceptionHandler converts to HTTP 409 Conflict.
          */
+	String storedOtp = redisTemplate.opsForValue().get("REG_OTP:" + request.getEmail());
+		if (storedOtp == null || !storedOtp.equals(request.getOtp())) {
+    		throw new RuntimeException("Invalid or expired verification code");
+	}
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new DuplicateResourceException("User", "username", request.getUsername());
         }
@@ -237,7 +281,7 @@ public class AuthService {
          * all DB-generated values (id, timestamps).
          */
         User savedUser = userRepository.save(user);
-
+	redisTemplate.delete("REG_OTP:" + request.getEmail());
         /*
          * STEP 6: Generate a JWT token for the newly registered user.
          *
@@ -330,6 +374,24 @@ public class AuthService {
      * @return AuthResponse containing the JWT token, username, and role
      * @throws BadCredentialsException (via AuthManager) if credentials are invalid
      */
+    public void sendRegistrationOtp(String email) {
+    if (userRepository.existsByEmail(email)) {
+        throw new RuntimeException("Email is already registered");
+    }
+
+    // Generate random 6-digit OTP
+    String otp = String.format("%06d", new Random().nextInt(1000000));
+
+    // Store in Redis with a 5-minute TTL
+    redisTemplate.opsForValue().set("REG_OTP:" + email, otp, Duration.ofMinutes(5));
+
+    // Send Email
+    SimpleMailMessage message = new SimpleMailMessage();
+    message.setTo(email);
+    message.setSubject("Your Verification Code - URL Shortener");
+    message.setText("Welcome!\n\nYour verification code is: " + otp + "\n\nThis code will expire in 5 minutes.");
+    mailSender.send(message);
+}
     public AuthResponse login(LoginRequest request) {
 
         /*

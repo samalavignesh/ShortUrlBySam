@@ -6,7 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import './index.css';
-
+import ForgotPassword from './pages/ForgotPassword';
 const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -15,7 +15,7 @@ const App: React.FC = () => {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<Dashboard />} />
