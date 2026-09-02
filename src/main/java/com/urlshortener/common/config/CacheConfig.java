@@ -99,23 +99,23 @@ public class CacheConfig {
      *    e.g. "2026-08-15T17:34:26" instead of [2026, 8, 15, 17, 34, 26]
      *    Strings are human-readable in redis-cli and work across Java versions.
      */
-    @Bean
-    public ObjectMapper cacheObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
+    
+    private ObjectMapper cacheObjectMapper() {
+	ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         // Prevent failures when Hibernate lazy proxy beans have no accessible properties
         mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         // Ignore unknown properties during deserialization (forward compatibility)
         mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        
+
         // Enable default typing so Jackson stores class names in JSON,
         // allowing correct deserialization back to concrete types (e.g., CachedUrl, List)
         mapper.activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 com.fasterxml.jackson.annotation.JsonTypeInfo.As.PROPERTY);
-                
+
         return mapper;
     }
 

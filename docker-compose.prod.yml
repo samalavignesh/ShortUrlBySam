@@ -75,6 +75,9 @@ services:
       - SPRING_DATA_REDIS_PORT=6379
       # App Base URL (Change this to your actual AWS Domain Name later)
       - APP_BASE_URL=https://shorturlbysam.duckdns.org
+      - AWS_REGION=eu-north-1
+      - AWS_DEFAULT_REGION=eu-north-1
+      - SPRING_CLOUD_AWS_REGION_STATIC=eu-north-1
     networks:
       - urlshortener-network
 
