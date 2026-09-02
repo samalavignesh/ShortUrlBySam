@@ -36,9 +36,45 @@
 		<jjwt.version>0.12.6</jjwt.version>
 		<springdoc.version>2.8.8</springdoc.version>
 		<zxing.version>3.5.3</zxing.version>
+		<!-- Spring Cloud AWS — check https://github.com/awspring/spring-cloud-aws/releases
+		     for the latest version compatible with Spring Boot 4.x -->
+		<spring-cloud-aws.version>3.3.0</spring-cloud-aws.version>
 	</properties>
 
+	<!-- ============================================================= -->
+	<!-- DEPENDENCY MANAGEMENT — Bill of Materials (BOM)               -->
+	<!-- The Spring Cloud AWS BOM pins all its internal module         -->
+	<!-- versions so they don't conflict with each other or with the   -->
+	<!-- AWS SDK v2 libraries pulled in transitively.                  -->
+	<!-- ============================================================= -->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>io.awspring.cloud</groupId>
+				<artifactId>spring-cloud-aws-dependencies</artifactId>
+				<version>${spring-cloud-aws.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
 	<dependencies>
+
+		<!-- ========================================= -->
+		<!-- AWS SYSTEMS MANAGER PARAMETER STORE       -->
+		<!-- ========================================= -->
+		<!--
+			Allows Spring Boot to load SecureString parameters from AWS SSM
+			at startup via spring.config.import=aws-parameterstore:/path/
+			The EC2 instance profile provides credentials automatically —
+			no access key / secret key is ever stored in the application.
+		-->
+		<dependency>
+			<groupId>io.awspring.cloud</groupId>
+			<artifactId>spring-cloud-aws-starter-parameter-store</artifactId>
+			<!-- Version managed by the BOM above -->
+		</dependency>
 
 		<!-- ========================================= -->
 		<!-- SPRING BOOT STARTERS                      -->
@@ -96,6 +132,15 @@
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 
 		<!-- ========================================= -->

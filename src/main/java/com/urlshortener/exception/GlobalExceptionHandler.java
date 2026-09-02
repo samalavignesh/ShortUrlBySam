@@ -8,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -74,6 +75,7 @@ import java.util.Map;
  *   @ExceptionHandler(ResourceNotFoundException.class) catches ResourceNotFoundException
  *   @ExceptionHandler(Exception.class) catches EVERYTHING ELSE (fallback)
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -302,12 +304,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGenericException(
             Exception ex) {
-
-        // DEBUG: expose the actual exception for diagnosis (REMOVE in production!)
-        ex.printStackTrace();
-        String debugMsg = "[DEBUG] " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
+        log.error("Unhandled exception occurred: ", ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)    // HTTP 500
-                .body(ApiResponse.error(debugMsg));
+                .body(ApiResponse.error("An unexpected error occurred. Please try again later."));
     }
 }

@@ -19,7 +19,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import java.time.Duration;
-import java.util.Random;
+import java.security.SecureRandom;
 /**
  * =====================================================
  * AUTH SERVICE
@@ -67,6 +67,8 @@ import java.util.Random;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /*
      * ===== DEPENDENCIES (injected by Spring via constructor) =====
@@ -177,7 +179,7 @@ public class AuthService {
             throw new RuntimeException("No account found with this email address");
         }
 
-        String otp = String.format("%06d", new Random().nextInt(1000000));
+        String otp = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
         redisTemplate.opsForValue().set("RESET_OTP:" + email, otp, Duration.ofMinutes(5));
 
         SimpleMailMessage message = new SimpleMailMessage();
@@ -380,7 +382,7 @@ public class AuthService {
     }
 
     // Generate random 6-digit OTP
-    String otp = String.format("%06d", new Random().nextInt(1000000));
+    String otp = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
 
     // Store in Redis with a 5-minute TTL
     redisTemplate.opsForValue().set("REG_OTP:" + email, otp, Duration.ofMinutes(5));
@@ -459,5 +461,13 @@ public class AuthService {
                 .username(user.getUsername())
                 .role(user.getRole().name())
                 .build();
+    }
+
+    public void logout(String jwt) {
+        java.util.Date expiration = jwtService.extractExpiration(jwt);
+        long ttlMillis = expiration.getTime() - System.currentTimeMillis();
+        if (ttlMillis > 0) {
+            redisTemplate.opsForValue().set("BL_JWT:" + jwt, "logout", java.time.Duration.ofMillis(ttlMillis));
+        }
     }
 }

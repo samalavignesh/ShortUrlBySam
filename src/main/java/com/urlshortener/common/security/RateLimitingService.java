@@ -28,9 +28,13 @@ public class RateLimitingService {
      * @return true if the request is allowed, false if the rate limit is exceeded.
      */
     public boolean allowRequest(String clientIp) {
-        String key = "rate_limit:ip:" + clientIp;
+        return allowRequest(clientIp, "global", MAX_REQUESTS_PER_WINDOW, WINDOW_SIZE_IN_MS);
+    }
+
+    public boolean allowRequest(String clientIp, String endpointId, int maxRequests, long windowSizeInMs) {
+        String key = "rate_limit:" + endpointId + ":" + clientIp;
         long currentTime = System.currentTimeMillis();
-        long windowStart = currentTime - WINDOW_SIZE_IN_MS;
+        long windowStart = currentTime - windowSizeInMs;
 
         // 1. Remove timestamps older than the sliding window
         redisTemplate.opsForZSet().removeRangeByScore(key, 0, windowStart);
@@ -38,7 +42,7 @@ public class RateLimitingService {
         // 2. Count the remaining requests in the current window
         Long currentRequests = redisTemplate.opsForZSet().zCard(key);
 
-        if (currentRequests != null && currentRequests >= MAX_REQUESTS_PER_WINDOW) {
+        if (currentRequests != null && currentRequests >= maxRequests) {
             // Rate limit exceeded
             return false;
         }
@@ -49,7 +53,7 @@ public class RateLimitingService {
         redisTemplate.opsForZSet().add(key, value, currentTime);
 
         // 4. Set an expiry on the key so it cleans itself up if the IP stops making requests
-        redisTemplate.expire(key, WINDOW_SIZE_IN_MS, TimeUnit.MILLISECONDS);
+        redisTemplate.expire(key, windowSizeInMs, TimeUnit.MILLISECONDS);
 
         return true;
     }

@@ -244,7 +244,7 @@ public class JwtService {
      * Reads the "exp" claim from the token payload.
      * Returns a Date object representing when the token expires.
      */
-    private Date extractExpiration(String token) {
+    public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }
 

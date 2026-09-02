@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.io.IOException;
 
@@ -96,6 +97,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private final UserDetailsService userDetailsService;
 
+    private final StringRedisTemplate redisTemplate;
+
     /*
      * ===== THE MAIN FILTER METHOD =====
      *
@@ -175,6 +178,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
          * substring(7) removes the "Bearer " prefix (7 characters).
          */
         final String jwt = authHeader.substring(7);
+
+        // Check if token is blacklisted
+        String isBlacklisted = redisTemplate.opsForValue().get("BL_JWT:" + jwt);
+        if (isBlacklisted != null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"success\": false, \"message\": \"Token has been invalidated\"}");
+            return;
+        }
 
         /*
          * STEP 4: Extract the username from the token.

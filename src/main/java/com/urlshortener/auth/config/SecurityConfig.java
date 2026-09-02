@@ -177,7 +177,7 @@ public class SecurityConfig {
                  *
                  * In PRODUCTION with PostgreSQL, remove this line.
                  */
-                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
 
                 /*
                  * URL-BASED AUTHORIZATION RULES
@@ -223,7 +223,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
-                                "/h2-console/**")
+                                "/h2-console/**",
+                                "/api/health")
                         .permitAll()
 
                         /*

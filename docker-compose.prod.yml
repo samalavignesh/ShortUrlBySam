@@ -25,7 +25,7 @@ services:
     environment:
       POSTGRES_DB: urlshortener
       POSTGRES_USER: urluser
-      POSTGRES_PASSWORD: urlpass # In a real production environment, use Docker Secrets!
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # In a real production environment, use Docker Secrets!
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -74,7 +74,7 @@ services:
       # Port is standard 6379 internally
       - SPRING_DATA_REDIS_PORT=6379
       # App Base URL (Change this to your actual AWS Domain Name later)
-      - APP_BASE_URL=http://localhost
+      - APP_BASE_URL=https://shorturlbysam.duckdns.org
     networks:
       - urlshortener-network
 

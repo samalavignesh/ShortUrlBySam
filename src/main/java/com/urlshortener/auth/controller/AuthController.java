@@ -71,4 +71,14 @@ public class AuthController {
         authService.resetPassword(request);
         return ResponseEntity.ok(ApiResponse.success("Password reset successfully. Please login with your new password.", null));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(jakarta.servlet.http.HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String jwt = authHeader.substring(7);
+            authService.logout(jwt);
+        }
+        return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
 }

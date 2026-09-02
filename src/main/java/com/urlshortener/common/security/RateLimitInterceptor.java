@@ -21,9 +21,22 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         // Extract client IP address
         String clientIp = getClientIp(request);
+        String uri = request.getRequestURI();
+
+        boolean allowed = true;
+        if (uri.startsWith("/api/auth/send-registration-otp") || uri.startsWith("/api/auth/forgot-password")) {
+            // 5 requests per 15 minutes for OTPs
+            allowed = rateLimitingService.allowRequest(clientIp, "otp", 5, 15 * 60 * 1000);
+        } else if (uri.startsWith("/api/auth/login")) {
+            // 10 requests per 5 minutes for Login
+            allowed = rateLimitingService.allowRequest(clientIp, "login", 10, 5 * 60 * 1000);
+        } else {
+            // Global default limit
+            allowed = rateLimitingService.allowRequest(clientIp);
+        }
 
         // Check if the request is allowed
-        if (!rateLimitingService.allowRequest(clientIp)) {
+        if (!allowed) {
             // Rate limit exceeded: return 429 Too Many Requests
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.getWriter().write("Too many requests. Please try again later.");
